@@ -17,16 +17,16 @@ const players = {};
 io.on('connection', (socket) => {
   console.log('Jugador conectado:', socket.id);
 
+  // Aparecer en una posición aleatoria para no quedar encimados
   players[socket.id] = {
-    x: 100,
-    y: 100,
+    x: Math.floor(Math.random() * 700) + 50,
+    y: Math.floor(Math.random() * 500) + 50,
     id: socket.id
   };
 
   socket.emit('currentPlayers', players);
   socket.broadcast.emit('newPlayer', players[socket.id]);
 
-  // Recibir movimiento y reenviarlo a todos los demás jugadores
   socket.on('playerMovement', (movementData) => {
     if (players[socket.id]) {
       players[socket.id].x = movementData.x;
