@@ -167,4 +167,188 @@ function checkCollision(newX, newY, radius) {
     }
   }
   return false; // Camino libre
-}
+}<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>The Maze of the Fallen Angel</title>
+  <style>
+    body {
+      margin: 0;
+      background: #050505;
+      color: #eee;
+      font-family: monospace;
+      text-align: center;
+    }
+    h1 { margin-top: 15px; color: #d9534f; text-shadow: 0 0 10px #ff0000; }
+    #status { color: #aaa; margin-bottom: 5px; }
+    canvas {
+      background: #111;
+      display: block;
+      margin: 10px auto;
+      border: 3px solid #444;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+      cursor: crosshair;
+    }
+    .controls-hint { color: #777; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>The Maze of the Fallen Angel</h1>
+  <p id="status">Conectando...</p>
+  <canvas id="gameCanvas" width="800" height="600" tabindex="1"></canvas>
+  <p class="controls-hint">Haz clic en el juego. Usa <b>WASD</b> o <b>Flechas</b> para moverte.</p>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    let players = {};
+    const keysPressed = {};
+    const SPEED = 3.5;
+    const PLAYER_RADIUS = 12;
+
+    // Muros del laberinto
+    const walls = [
+      { x: 150, y: 100, width: 500, height: 20 },
+      { x: 150, y: 100, width: 20, height: 400 },
+      { x: 630, y: 100, width: 20, height: 400 },
+      { x: 250, y: 250, width: 300, height: 20 },
+      { x: 380, y: 270, width: 20, height: 150 },
+      { x: 150, y: 480, width: 500, height: 20 }
+    ];
+
+    socket.on('connect', () => {
+      statusText.innerText = 'Conectado. ID: ' + socket.id;
+    });
+
+    socket.on('currentPlayers', (serverPlayers) => { players = serverPlayers; });
+    socket.on('newPlayer', (playerInfo) => { players[playerInfo.id] = playerInfo; });
+    socket.on('playerMoved', (playerInfo) => {
+      if (players[playerInfo.id]) {
+        players[playerInfo.id].x = playerInfo.x;
+        players[playerInfo.id].y = playerInfo.y;
+      }
+    });
+    socket.on('playerDisconnected', (id) => { delete players[id]; });
+
+    window.addEventListener('keydown', (e) => {
+      keysPressed[e.key.toLowerCase()] = true;
+      keysPressed[e.code] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keysPressed[e.key.toLowerCase()] = false;
+      keysPressed[e.code] = false;
+    });
+
+    // Función para detectar choque con paredes
+    function checkCollision(newX, newY) {
+      for (let w of walls) {
+        if (
+          newX + PLAYER_RADIUS > w.x &&
+          newX - PLAYER_RADIUS < w.x + w.width &&
+          newY + PLAYER_RADIUS > w.y &&
+          newY - PLAYER_RADIUS < w.y + w.height
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function handleInput() {
+      const myPlayer = players[socket.id];
+      if (!myPlayer) return;
+
+      let nextX = myPlayer.x;
+      let nextY = myPlayer.y;
+
+      if (keysPressed['arrowup'] || keysPressed['w'] || keysPressed['KeyW']) nextY -= SPEED;
+      if (keysPressed['arrowdown'] || keysPressed['s'] || keysPressed['KeyS']) nextY += SPEED;
+      if (keysPressed['arrowleft'] || keysPressed['a'] || keysPressed['KeyA']) nextX -= SPEED;
+      if (keysPressed['arrowright'] || keysPressed['d'] || keysPressed['KeyD']) nextX += SPEED;
+
+      // Limitar bordes del mapa
+      nextX = Math.max(PLAYER_RADIUS, Math.min(canvas.width - PLAYER_RADIUS, nextX));
+      nextY = Math.max(PLAYER_RADIUS, Math.min(canvas.height - PLAYER_RADIUS, nextY));
+
+      let moved = false;
+
+      // Probar movimiento en X
+      if (!checkCollision(nextX, myPlayer.y)) {
+        if (myPlayer.x !== nextX) { myPlayer.x = nextX; moved = true; }
+      }
+      // Probar movimiento en Y
+      if (!checkCollision(myPlayer.x, nextY)) {
+        if (myPlayer.y !== nextY) { myPlayer.y = nextY; moved = true; }
+      }
+
+      if (moved) {
+        socket.emit('playerMovement', { x: myPlayer.x, y: myPlayer.y });
+      }
+    }
+
+    // Dibujar iluminación de la linterna
+    function drawLighting(playerX, playerY) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.93)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.globalCompositeOperation = 'destination-out';
+      const gradient = ctx.createRadialGradient(playerX, playerY, 15, playerX, playerY, 130);
+      gradient.addColorStop(0, 'rgba(0,0,0,1)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(playerX, playerY, 130, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Dibujar paredes
+      ctx.fillStyle = '#3a3a4c';
+      walls.forEach(w => ctx.fillRect(w.x, w.y, w.width, w.height));
+
+      const count = Object.keys(players).length;
+      statusText.innerText = `Jugadores conectados: ${count}`;
+
+      // 2. Dibujar jugadores
+      for (let id in players) {
+        const p = players[id];
+        ctx.fillStyle = id === socket.id ? '#00ff88' : '#ff4444';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, PLAYER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (id === socket.id) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '11px sans-serif';
+          ctx.fillText('Tú', p.x - 7, p.y - 16);
+        }
+      }
+
+      // 3. Aplicar oscuridad si el jugador existe
+      const myPlayer = players[socket.id];
+      if (myPlayer) {
+        drawLighting(myPlayer.x, myPlayer.y);
+      }
+    }
+
+    function gameLoop() {
+      handleInput();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
+</body>
+</html>
