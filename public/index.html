@@ -1,17 +1,35 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <title>The Maze of the Fallen Angel</title>
   <style>
-    body { margin: 0; background: #111; color: #fff; font-family: sans-serif; text-align: center; }
-    canvas { background: #222; display: block; margin: 20px auto; border: 2px solid #555; }
+    body {
+      margin: 0;
+      background: #050505;
+      color: #eee;
+      font-family: monospace;
+      text-align: center;
+    }
+    h1 { margin-top: 15px; color: #d9534f; text-shadow: 0 0 10px #ff0000; }
+    #status { color: #aaa; margin-bottom: 5px; }
+    canvas {
+      background: #111;
+      display: block;
+      margin: 10px auto;
+      border: 3px solid #444;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+      cursor: crosshair;
+    }
+    .controls-hint { color: #777; font-size: 0.9em; }
   </style>
 </head>
 <body>
   <h1>The Maze of the Fallen Angel</h1>
   <p id="status">Conectando...</p>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <canvas id="gameCanvas" width="800" height="600" tabindex="1"></canvas>
+  <p class="controls-hint">Haz clic dentro del área de juego. Usa <b>WASD</b> o las <b>Flechas</b> para moverte.</p>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -21,47 +39,119 @@
     const statusText = document.getElementById('status');
 
     let players = {};
+    const keysPressed = {};
+    const SPEED = 4;
+
+    // Estructura básica de paredes para el laberinto
+    const walls = [
+      { x: 200, y: 100, width: 400, height: 20 },
+      { x: 100, y: 200, width: 20, height: 300 },
+      { x: 680, y: 200, width: 20, height: 300 },
+      { x: 250, y: 400, width: 300, height: 20 }
+    ];
 
     socket.on('connect', () => {
-      statusText.innerText = 'Conectado como: ' + socket.id;
+      statusText.innerText = 'Conectado. ID: ' + socket.id;
     });
 
     socket.on('currentPlayers', (serverPlayers) => {
       players = serverPlayers;
-      draw();
     });
 
     socket.on('newPlayer', (playerInfo) => {
       players[playerInfo.id] = playerInfo;
-      draw();
     });
 
     socket.on('playerMoved', (playerInfo) => {
       if (players[playerInfo.id]) {
         players[playerInfo.id].x = playerInfo.x;
         players[playerInfo.id].y = playerInfo.y;
-        draw();
       }
     });
 
     socket.on('playerDisconnected', (id) => {
       delete players[id];
-      draw();
     });
+
+    // Escuchar teclas en toda la ventana
+    window.addEventListener('keydown', (e) => {
+      keysPressed[e.key.toLowerCase()] = true;
+      keysPressed[e.code] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keysPressed[e.key.toLowerCase()] = false;
+      keysPressed[e.code] = false;
+    });
+
+    function handleInput() {
+      const myPlayer = players[socket.id];
+      if (!myPlayer) return;
+
+      let moved = false;
+
+      if (keysPressed['arrowup'] || keysPressed['w'] || keysPressed['KeyW']) {
+        myPlayer.y -= SPEED;
+        moved = true;
+      }
+      if (keysPressed['arrowdown'] || keysPressed['s'] || keysPressed['KeyS']) {
+        myPlayer.y += SPEED;
+        moved = true;
+      }
+      if (keysPressed['arrowleft'] || keysPressed['a'] || keysPressed['KeyA']) {
+        myPlayer.x -= SPEED;
+        moved = true;
+      }
+      if (keysPressed['arrowright'] || keysPressed['d'] || keysPressed['KeyD']) {
+        myPlayer.x += SPEED;
+        moved = true;
+      }
+
+      // Mantener dentro de los bordes de la pantalla
+      myPlayer.x = Math.max(15, Math.min(canvas.width - 15, myPlayer.x));
+      myPlayer.y = Math.max(15, Math.min(canvas.height - 15, myPlayer.y));
+
+      if (moved) {
+        socket.emit('playerMovement', { x: myPlayer.x, y: myPlayer.y });
+      }
+    }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Dibujar paredes del laberinto
+      ctx.fillStyle = '#444455';
+      walls.forEach(w => {
+        ctx.fillRect(w.x, w.y, w.width, w.height);
+      });
+
       const count = Object.keys(players).length;
       statusText.innerText = `Jugadores conectados: ${count}`;
 
+      // Dibujar jugadores
       for (let id in players) {
         const p = players[id];
-        ctx.fillStyle = id === socket.id ? '#00ff00' : '#ff0000';
+        ctx.fillStyle = id === socket.id ? '#00ff88' : '#ff4444';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
         ctx.fill();
+
+        // Etiqueta indicando "Tú"
+        if (id === socket.id) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '12px sans-serif';
+          ctx.fillText('Tú', p.x - 8, p.y - 18);
+        }
       }
     }
+
+    function gameLoop() {
+      handleInput();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
   </script>
 </body>
 </html>
