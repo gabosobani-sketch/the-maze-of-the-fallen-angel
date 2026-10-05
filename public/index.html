@@ -154,4 +154,17 @@
     gameLoop();
   </script>
 </body>
-</html>
+</html> // Función para verificar si una posición choca con alguna pared
+function checkCollision(newX, newY, radius) {
+  for (let w of walls) {
+    if (
+      newX + radius > w.x &&
+      newX - radius < w.x + w.width &&
+      newY + radius > w.y &&
+      newY - radius < w.y + w.height
+    ) {
+      return true; // Hay colisión
+    }
+  }
+  return false; // Camino libre
+}
