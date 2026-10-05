@@ -1,0 +1,155 @@
+HTML
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>The Maze Of The Fallen Angel</title>
+  <style>
+    body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    #canvas { border: 2px solid #444; background: #050505; }
+    #ui { position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 14px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h2>The Maze Of The Fallen Angel</h2>
+    <p id="status">Esperando jugadores (1/4)...</p>
+    <p id="objective">Encuentra tu cristal asignado en el laberinto.</p>
+    <p id="timer"></p>
+  </div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let myId = null;
+    let state = {};
+    const keys = {};
+
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    socket.on('connect', () => { myId = socket.id; });
+
+    socket.on('stateUpdate', (newState) => {
+      state = newState;
+      updateUI();
+    });
+
+    socket.on('gameOver', (res) => {
+      alert(res.won ? "¡VICTORIA! " + res.reason : "DERROTA: " + res.reason);
+    });
+
+    function updateUI() {
+      if (!state.players) return;
+      const count = Object.keys(state.players).length;
+      document.getElementById('status').innerText = `Jugadores en sala: ${count}/4`;
+
+      if (state.exitOpen) {
+        document.getElementById('timer').innerText = `¡MAPA COLAPSANDO! Tiempo restante: ${Math.max(0, Math.ceil(state.collapseTimer))}s`;
+      }
+    }
+
+    function gameLoop() {
+      if (state.players && state.players[myId] && state.players[myId].alive) {
+        const p = state.players[myId];
+        let speed = 3;
+        let dx = 0, dy = 0;
+        if (keys['w'] || keys['ArrowUp']) dy -= speed;
+        if (keys['s'] || keys['ArrowDown']) dy += speed;
+        if (keys['a'] || keys['ArrowLeft']) dx -= speed;
+        if (keys['d'] || keys['ArrowRight']) dx += speed;
+
+        if (dx !== 0 || dy !== 0) {
+          p.x += dx;
+          p.y += dy;
+          socket.emit('playerMove', { x: p.x, y: p.y });
+        }
+
+        if (state.crystals) {
+          state.crystals.forEach(c => {
+            if (c.id === p.crystalId && !c.claimedBy) {
+              const dist = Math.hypot(p.x - c.x, p.y - c.y);
+              if (dist < 25) {
+                socket.emit('claimCrystal', c.id);
+              }
+            }
+          });
+        }
+      }
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!state.players || !state.players[myId]) return;
+
+      const me = state.players[myId];
+
+      ctx.save();
+      ctx.translate(canvas.width / 2 - me.x, canvas.height / 2 - me.y);
+
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(0, 0, 1600, 1600);
+
+      if (state.crystals) {
+        state.crystals.forEach(c => {
+          if (!c.claimedBy) {
+            ctx.fillStyle = (c.id === me.crystalId) ? '#00ffff' : '#888888';
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+
+      if (state.exitOpen && state.exitPos) {
+        ctx.fillStyle = '#f39c12';
+        ctx.fillRect(state.exitPos.x - 20, state.exitPos.y - 20, 40, 40);
+      }
+
+      Object.values(state.players).forEach(p => {
+        if (!p.alive) return;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (!state.fused && state.angels) {
+        state.angels.forEach(a => {
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.arc(a.x, a.y, 18, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (state.fusedAngel) {
+        ctx.fillStyle = '#800080';
+        ctx.beginPath();
+        ctx.arc(state.fusedAngel.x, state.fusedAngel.y, 28, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      const gradient = ctx.createRadialGradient(
+        canvas.width / 2, canvas.height / 2, 80,
+        canvas.width / 2, canvas.height / 2, 220
+      );
+      gradient.addColorStop(0, 'rgba(0,0,0,0)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0.98)');
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
